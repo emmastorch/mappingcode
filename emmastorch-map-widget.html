@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Find Your Nearest Emma's Torch</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap');
+
+      body {
+        font-family: 'Open Sans', sans-serif;
+        font-size: 16px;
+        color: #333;
+        margin: 0;
+        padding: 1rem;
+      }
+      #map {
+        height: 350px;
+        width: 100%;
+      }
+      #panel {
+        margin-top: 10px;
+      }
+      .directions-link {
+        color: #1a73e8;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .et-title {
+        margin-top: 1rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      input[type="text"] {
+        width: 100%;
+        max-width: 400px;
+        padding: 0.5rem;
+        font-size: 1rem;
+        box-sizing: border-box;
+      }
+      button {
+        margin-top: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-size: 1rem;
+        background-color: #1a73e8;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #1669c1;
+      }
+      @media (max-width: 600px) {
+        input[type="text"], button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="et-title">Find Your Nearest Emma's Torch Location</div>
+    <input id="address" type="text" placeholder="Enter your address" autocomplete="on">
+    <button onclick="findClosestLocation()">My Address</button>
+    <div id="map"></div>
+    <div id="panel"></div>
+
+    <script>
+      let map;
+      let geocoder;
+      let service;
+      let userMarker;
+      let autocomplete;
+      let locationMarkers = [];
+
+      const locations = [
+        { name: "Emma's Torch DC", lat: 38.9211, lng: -76.9792, address: "2212 Rhode Island Avenue NE, Washington, DC 20018" },
+        { name: "Emma's Torch Brooklyn", lat: 40.6720, lng: -73.9682, address: "10 Grand Army Plaza, Brooklyn, NY 11238" },
+        { name: "Emma's Torch Manhattan", lat: 40.8648, lng: -73.9220, address: "4782 Broadway, New York, NY 10034" }
+      ];
+
+      function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 5,
+          center: { lat: 39.8283, lng: -98.5795 }
+        });
+
+        geocoder = new google.maps.Geocoder();
+        service = new google.maps.DistanceMatrixService();
+
+        const input = document.getElementById("address");
+        autocomplete = new google.maps.places.Autocomplete(input);
+        autocomplete.setFields(["formatted_address"]);
+
+        locations.forEach((loc, index) => {
+          const marker = new google.maps.Marker({
+            position: { lat: loc.lat, lng: loc.lng },
+            map: map,
+            title: loc.name
+          });
+
+          const infoWindow = new google.maps.InfoWindow({
+            content: `<strong>${loc.name}</strong><br>${loc.address}`
+          });
+
+          marker.addListener("click", () => {
+            infoWindow.open(map, marker);
+          });
+
+          locationMarkers.push({ marker, infoWindow });
+        });
+      }
+
+      function findClosestLocation() {
+        if (!geocoder) {
+          alert("Geocoder is not initialized. Please wait for the map to load.");
+          return;
+        }
+
+        const address = document.getElementById("address").value;
+        if (!address) return alert("Please enter an address.");
+
+        geocoder.geocode({ address }, function(results, status) {
+          if (status === "OK") {
+            const origin = results[0].geometry.location;
+
+            if (userMarker) userMarker.setMap(null);
+            userMarker = new google.maps.Marker({
+              map: map,
+              position: origin,
+              title: "Your Location",
+              icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+            });
+
+            map.setCenter(origin);
+            map.setZoom(10);
+
+            const destinations = locations.map(loc => new google.maps.LatLng(loc.lat, loc.lng));
+            service.getDistanceMatrix({
+              origins: [origin],
+              destinations: destinations,
+              travelMode: 'TRANSIT'
+            }, function(response, status) {
+              if (status === 'OK') {
+                const results = response.rows[0].elements;
+                let minDuration = Number.MAX_VALUE;
+                let closestIndex = -1;
+
+                results.forEach((result, index) => {
+                  if (result.status === 'OK') {
+                    const duration = result.duration.value;
+                    if (duration < minDuration) {
+                      minDuration = duration;
+                      closestIndex = index;
+                    }
+
+                    const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(address)}&destination=${encodeURIComponent(locations[index].address)}&travelmode=transit`;
+                    const infoContent = `<strong>${locations[index].name}</strong><br>${locations[index].address}<br>` +
+                      `ETA: ${result.duration.text}<br>Distance: ${result.distance.text}<br>` +
+                      `<a class='directions-link' href='${directionsUrl}' target='_blank'>Directions</a>`;
+                    locationMarkers[index].infoWindow.setContent(infoContent);
+                  }
+                });
+
+                locationMarkers.forEach(({ marker }) => {
+                  marker.setIcon(null);
+                });
+
+                if (closestIndex > -1) {
+                  const closest = locations[closestIndex];
+                  const dist = results[closestIndex].distance.text;
+                  const dur = results[closestIndex].duration.text;
+                  const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(address)}&destination=${encodeURIComponent(closest.address)}&travelmode=transit`;
+
+                  document.getElementById("panel").innerHTML =
+                    `<strong>Your closest Emma's Torch location is:</strong><br>${closest.name}<br>` +
+                    `Estimated time: ${dur}<br>` +
+                    `Transit distance: ${dist}<br>` +
+                    `<a class='directions-link' href='${directionsUrl}' target='_blank'>Directions</a>`;
+
+                  locationMarkers[closestIndex].infoWindow.setContent(
+                    `<strong>Your closest Emma's Torch location is:</strong><br>${closest.name}<br>${closest.address}<br>` +
+                    `ETA: ${dur}<br>Distance: ${dist}<br>` +
+                    `<a class='directions-link' href='${directionsUrl}' target='_blank'>Directions</a>`
+                  );
+
+                  locationMarkers[closestIndex].infoWindow.open(map, locationMarkers[closestIndex].marker);
+                  locationMarkers[closestIndex].marker.setIcon("http://maps.google.com/mapfiles/ms/icons/green-dot.png");
+                }
+              }
+            });
+          } else {
+            alert("Geocode was not successful: " + status);
+          }
+        });
+      }
+
+      window.initMap = initMap;
+      window.findClosestLocation = findClosestLocation;
+    </script>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0VGv-D-0RE9r1RIlNC1EzHNXSaMhZXpE&libraries=places&callback=initMap" async defer></script>
+  </body>
+</html>
